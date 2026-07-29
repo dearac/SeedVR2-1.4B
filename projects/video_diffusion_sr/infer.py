@@ -38,6 +38,24 @@ from common.distributed.meta_init_utils import (
 
 from models.dit_v2 import na
 
+
+def _load_checkpoint(path: str, map_location="cpu"):
+    """Load PyTorch or safetensors checkpoints without changing call sites."""
+    if path.lower().endswith(".safetensors"):
+        try:
+            from safetensors.torch import load_file
+        except ImportError as exc:
+            raise ImportError(
+                "Loading .safetensors checkpoints requires the safetensors package. "
+                "Install it with: pip install safetensors"
+            ) from exc
+        device = "cpu" if map_location is None else str(map_location)
+        if device.startswith("cuda"):
+            device = "cpu"
+        return load_file(path, device=device)
+    return torch.load(path, map_location=map_location, mmap=True)
+
+
 class VideoDiffusionInfer():
     def __init__(self, config: DictConfig):
         self.config = config
@@ -86,7 +104,7 @@ class VideoDiffusionInfer():
         self.dit.set_gradient_checkpointing(self.config.dit.gradient_checkpoint)
 
         if checkpoint:
-            state = torch.load(checkpoint, map_location="cpu", mmap=True)
+            state = _load_checkpoint(checkpoint, map_location="cpu")
             loading_info = self.dit.load_state_dict(state, strict=True, assign=True)
             print(f"Loading pretrained ckpt from {checkpoint}")
             print(f"Loading info: {loading_info}")
@@ -109,9 +127,7 @@ class VideoDiffusionInfer():
         self.vae.to(device=get_device(), dtype=dtype)
 
         # Load vae checkpoint.
-        state = torch.load(
-            self.config.vae.checkpoint, map_location=get_device(), mmap=True
-        )
+        state = _load_checkpoint(self.config.vae.checkpoint, map_location="cpu")
         self.vae.load_state_dict(state)
 
         # Set causal slicing.
@@ -338,11 +354,6 @@ class VideoDiffusionInfer():
 
         if dit_offload:
             self.dit.to("cpu")
+            torch.cuda.empty_cache()
 
-        # Vae decode.
-        self.vae.to(get_device())
-        samples = self.vae_decode(latents)
-
-        if dit_offload:
-            self.dit.to(get_device())
-        return samples
+        return self.vae_decode(latents)

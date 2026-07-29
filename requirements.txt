@@ -1,5 +1,7 @@
 # Common
 einops==0.7.0                   # Tensor operations
+huggingface_hub>=0.24.0         # Checkpoint downloads
+safetensors>=0.4.3              # Safe tensor checkpoint loading
 
 # Training
 torch==2.3.0                    # Torch
